@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import {
+  Blocks,
   Bookmark,
-  Copy,
   FileUp,
   FolderClosed,
   FolderOpen,
@@ -21,12 +21,13 @@ const NAV: { label: string; icon: LucideIcon }[] = [
   { label: "Import a Skill", icon: FileUp },
   { label: "Request a Skill", icon: Plus },
   { label: "Saved", icon: Bookmark },
-  { label: "Created by me", icon: Copy },
+  { label: "Created by me", icon: Blocks },
 ];
 
-const CATEGORIES: { label: string; children: string[] }[] = [
+const CATEGORIES: { label: string; prefix: string; children: string[] }[] = [
   {
     label: "Creative Skills",
+    prefix: "Creative",
     children: [
       "Operational",
       "Strategy",
@@ -38,16 +39,22 @@ const CATEGORIES: { label: string; children: string[] }[] = [
 ];
 
 const ITEM =
-  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent";
+  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent";
 const SECTION = "px-2 text-sm text-muted-foreground";
 
 function CollapsibleFolder({
   label,
+  prefix,
   children,
+  selected,
+  onSelect,
   defaultOpen = false,
 }: {
   label: string;
+  prefix: string;
   children: string[];
+  selected: string;
+  onSelect: (value: string) => void;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -61,43 +68,73 @@ function CollapsibleFolder({
         aria-expanded={open}
         className={ITEM}
       >
-        <Icon className="size-4 shrink-0" strokeWidth={1} />
+        <Icon className="size-4 shrink-0" strokeWidth={1.5} />
         <span className="truncate">{label}</span>
       </button>
-      {open && children.length > 0 && (
-        <div className="flex flex-col">
-          {children.map((child) => (
-            <a
-              key={child}
-              href="#"
-              className={`${ITEM} pl-8 text-muted-foreground`}
-            >
-              {child}
-            </a>
-          ))}
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-[var(--ease-out)] ${
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className="overflow-hidden" inert={!open}>
+          <div className="flex flex-col">
+            {children.map((child) => {
+              const value = `${prefix} / ${child}`;
+              const active = selected === value;
+              return (
+                <button
+                  key={child}
+                  type="button"
+                  onClick={() => onSelect(value)}
+                  aria-current={active ? "true" : undefined}
+                  className={`${ITEM} pl-8 ${
+                    active
+                      ? "bg-sidebar-accent font-medium text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  <span className="truncate">{child}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-export function AppSidebar() {
+export function AppSidebar({
+  selected,
+  onSelect,
+  activeTags,
+  onToggleTag,
+}: {
+  selected: string;
+  onSelect: (value: string) => void;
+  activeTags: string[];
+  onToggleTag: (tag: string) => void;
+}) {
   return (
-    <aside className="flex w-[236px] shrink-0 flex-col justify-between overflow-y-auto py-3">
+    <aside className="no-scrollbar flex w-[236px] shrink-0 flex-col justify-between overflow-y-auto py-3">
       <div className="flex flex-col gap-8">
-        {/* Brand */}
-        <div className="flex items-center gap-2 px-2">
+        {/* Brand — returns to the full directory (home) */}
+        <button
+          type="button"
+          onClick={() => onSelect("")}
+          className="flex w-fit items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-sidebar-accent"
+        >
           <LogoMark className="h-[13px] w-4 text-foreground" />
           <span className="text-sm">Superside Skills Directory</span>
-        </div>
+        </button>
 
         {/* Primary nav */}
         <nav className="flex flex-col">
           {NAV.map(({ label, icon: Icon }) => (
-            <a key={label} href="#" className={ITEM}>
-              <Icon className="size-4 shrink-0" strokeWidth={1} />
+            <button key={label} type="button" className={ITEM}>
+              <Icon className="size-4 shrink-0" strokeWidth={1.5} />
               {label}
-            </a>
+            </button>
           ))}
         </nav>
 
@@ -109,17 +146,20 @@ export function AppSidebar() {
               <CollapsibleFolder
                 key={category.label}
                 label={category.label}
+                prefix={category.prefix}
                 children={category.children}
-                defaultOpen
+                selected={selected}
+                onSelect={onSelect}
               />
             ))}
-          </div>
-          <div className="flex flex-col">
             {FOLDERS.map((folder) => (
               <CollapsibleFolder
                 key={folder.label}
                 label={folder.label}
+                prefix={folder.label}
                 children={folder.children}
+                selected={selected}
+                onSelect={onSelect}
               />
             ))}
           </div>
@@ -130,7 +170,13 @@ export function AppSidebar() {
           <span className={SECTION}>Tags</span>
           <div className="flex flex-wrap gap-1 px-2">
             {TAGS.map((tag) => (
-              <Tag key={tag}>{tag}</Tag>
+              <Tag
+                key={tag}
+                active={activeTags.includes(tag)}
+                onClick={() => onToggleTag(tag)}
+              >
+                {tag}
+              </Tag>
             ))}
           </div>
         </div>
@@ -138,8 +184,8 @@ export function AppSidebar() {
 
       {/* User */}
       <div className="flex items-center gap-2 px-2 pt-6">
-        <Avatar className="size-4">
-          <AvatarFallback className="bg-secondary text-[8px] font-normal text-foreground">
+        <Avatar className="size-5">
+          <AvatarFallback className="bg-secondary text-[10px] font-normal text-foreground">
             ML
           </AvatarFallback>
         </Avatar>

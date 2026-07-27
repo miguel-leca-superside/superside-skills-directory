@@ -353,23 +353,25 @@ export async function getSkillArchiveFiles(
 ): Promise<ArchiveFile[]> {
   if (![section, sub, slug].every((s) => SAFE_SEGMENT.test(s))) return [];
 
-  if (TOKEN) {
-    // Reuse the single cached archive — no extra GitHub call per download.
-    const files = await fetchRepoArchive();
-    const folder = `skills/${section}/${sub}/${slug}/`;
-    const out: ArchiveFile[] = [];
-    for (const [p, content] of files) {
-      if (p.startsWith(folder)) out.push({ path: p.slice(folder.length), content });
-    }
-    return out;
+  // Same source order as getCatalog: local checkout only when there's no token
+  // and it actually exists (dev); otherwise the single cached archive — which
+  // works token-less against the public repo (prod/Vercel).
+  if (!TOKEN && (await hasLocalCheckout())) {
+    const dir = path.join(LOCAL_PATH, "skills", section, sub, slug);
+    const rels = await listFilesRecursive(dir);
+    return Promise.all(
+      rels.map(async (rel) => ({
+        path: rel,
+        content: new Uint8Array(await fs.readFile(path.join(dir, rel))),
+      })),
+    );
   }
 
-  const dir = path.join(LOCAL_PATH, "skills", section, sub, slug);
-  const rels = await listFilesRecursive(dir);
-  return Promise.all(
-    rels.map(async (rel) => ({
-      path: rel,
-      content: new Uint8Array(await fs.readFile(path.join(dir, rel))),
-    })),
-  );
+  const files = await fetchRepoArchive();
+  const folder = `skills/${section}/${sub}/${slug}/`;
+  const out: ArchiveFile[] = [];
+  for (const [p, content] of files) {
+    if (p.startsWith(folder)) out.push({ path: p.slice(folder.length), content });
+  }
+  return out;
 }

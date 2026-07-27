@@ -14,45 +14,27 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogoMark } from "@/components/icons";
 import { Tag } from "@/components/tag";
-import { FOLDERS, TAGS } from "@/lib/data";
+import type { SectionNode } from "@/lib/data";
 
 const NAV: { label: string; icon: LucideIcon }[] = [
   { label: "Search", icon: Search },
-  { label: "Import a Skill", icon: FileUp },
+  { label: "Upload a Skill", icon: FileUp },
   { label: "Request a Skill", icon: Plus },
   { label: "Saved", icon: Bookmark },
   { label: "Created by me", icon: Blocks },
-];
-
-const CATEGORIES: { label: string; prefix: string; children: string[] }[] = [
-  {
-    label: "Creative Skills",
-    prefix: "Creative",
-    children: [
-      "Operational",
-      "Strategy",
-      "Concepting and Exploration",
-      "Production",
-      "Delivery & Quality",
-    ],
-  },
 ];
 
 const ITEM =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent";
 const SECTION = "px-2 text-sm text-muted-foreground";
 
-function CollapsibleFolder({
-  label,
-  prefix,
-  children,
+function CollapsibleSection({
+  section,
   selected,
   onSelect,
   defaultOpen = false,
 }: {
-  label: string;
-  prefix: string;
-  children: string[];
+  section: SectionNode;
   selected: string;
   onSelect: (value: string) => void;
   defaultOpen?: boolean;
@@ -69,7 +51,7 @@ function CollapsibleFolder({
         className={ITEM}
       >
         <Icon className="size-4 shrink-0" strokeWidth={1.5} />
-        <span className="truncate">{label}</span>
+        <span className="truncate">{section.label}</span>
       </button>
       <div
         className={`grid transition-[grid-template-rows] duration-200 ease-[var(--ease-out)] ${
@@ -78,22 +60,25 @@ function CollapsibleFolder({
       >
         <div className="overflow-hidden" inert={!open}>
           <div className="flex flex-col">
-            {children.map((child) => {
-              const value = `${prefix} / ${child}`;
+            {section.subcategories.map((sub) => {
+              const value = `${section.slug}/${sub.slug}`;
               const active = selected === value;
               return (
                 <button
-                  key={child}
+                  key={sub.slug}
                   type="button"
                   onClick={() => onSelect(value)}
                   aria-current={active ? "true" : undefined}
-                  className={`${ITEM} pl-8 ${
+                  className={`${ITEM} justify-between pl-8 ${
                     active
                       ? "bg-sidebar-accent font-medium text-foreground"
                       : "text-muted-foreground"
                   }`}
                 >
-                  <span className="truncate">{child}</span>
+                  <span className="truncate">{sub.label}</span>
+                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                    {sub.count}
+                  </span>
                 </button>
               );
             })}
@@ -105,11 +90,15 @@ function CollapsibleFolder({
 }
 
 export function AppSidebar({
+  sections,
+  tags,
   selected,
   onSelect,
   activeTags,
   onToggleTag,
 }: {
+  sections: SectionNode[];
+  tags: string[];
   selected: string;
   onSelect: (value: string) => void;
   activeTags: string[];
@@ -138,48 +127,39 @@ export function AppSidebar({
           ))}
         </nav>
 
-        {/* Categories + folders */}
+        {/* Categories — one collapsible per section, driven by the catalog */}
         <div className="flex flex-col gap-3">
           <span className={SECTION}>Categories</span>
           <div className="flex flex-col">
-            {CATEGORIES.map((category) => (
-              <CollapsibleFolder
-                key={category.label}
-                label={category.label}
-                prefix={category.prefix}
-                children={category.children}
+            {sections.map((section, i) => (
+              <CollapsibleSection
+                key={section.slug}
+                section={section}
                 selected={selected}
                 onSelect={onSelect}
-              />
-            ))}
-            {FOLDERS.map((folder) => (
-              <CollapsibleFolder
-                key={folder.label}
-                label={folder.label}
-                prefix={folder.label}
-                children={folder.children}
-                selected={selected}
-                onSelect={onSelect}
+                defaultOpen={i === 0}
               />
             ))}
           </div>
         </div>
 
-        {/* Tags */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION}>Tags</span>
-          <div className="flex flex-wrap gap-1 px-2">
-            {TAGS.map((tag) => (
-              <Tag
-                key={tag}
-                active={activeTags.includes(tag)}
-                onClick={() => onToggleTag(tag)}
-              >
-                {tag}
-              </Tag>
-            ))}
+        {/* Tags — derived from the skills actually in the catalog */}
+        {tags.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <span className={SECTION}>Tags</span>
+            <div className="flex flex-wrap gap-1 px-2">
+              {tags.map((tag) => (
+                <Tag
+                  key={tag}
+                  active={activeTags.includes(tag)}
+                  onClick={() => onToggleTag(tag)}
+                >
+                  {tag}
+                </Tag>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* User */}

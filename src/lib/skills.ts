@@ -228,11 +228,23 @@ async function readFromLocal(): Promise<RawSkill[]> {
 // ---------------------------------------------------------------------------
 
 function ghHeaders(): Record<string, string> {
-  return {
-    Authorization: `Bearer ${TOKEN}`,
+  const headers: Record<string, string> = {
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "superside-skills-directory",
   };
+  // The registry is public, so a token is optional — include it only when set
+  // (raises the rate limit and is needed if the repo is ever made private again).
+  if (TOKEN) headers.Authorization = `Bearer ${TOKEN}`;
+  return headers;
+}
+
+/** True when a local sibling checkout of the registry exists (dev convenience). */
+async function hasLocalCheckout(): Promise<boolean> {
+  try {
+    return (await fs.stat(path.join(LOCAL_PATH, "skills"))).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -310,15 +322,17 @@ async function readFromGitHub(): Promise<RawSkill[]> {
 // ---------------------------------------------------------------------------
 
 /**
- * Read the approved catalog from the registry. Fetches from GitHub when a
- * token is configured (production), otherwise reads the local sibling
- * checkout (dev). Returns the same shape either way.
+ * Read the approved catalog from the registry. Source selection:
+ *   • token set                     → GitHub (authenticated; higher limits)
+ *   • no token, local checkout found → local sibling checkout (dev convenience)
+ *   • no token, no checkout          → GitHub (public repo, unauthenticated) — this
+ *     is the production/Vercel path, so no secret is required to browse the catalog.
+ * Returns the same shape either way.
  */
 export const getCatalog = cache(async (): Promise<Catalog> => {
-  if (TOKEN) {
-    return assemble(await readFromGitHub(), "github");
-  }
-  return assemble(await readFromLocal(), "local");
+  if (TOKEN) return assemble(await readFromGitHub(), "github");
+  if (await hasLocalCheckout()) return assemble(await readFromLocal(), "local");
+  return assemble(await readFromGitHub(), "github");
 });
 
 /** A single file's bytes, path relative to the skill folder. */

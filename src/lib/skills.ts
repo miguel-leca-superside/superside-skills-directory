@@ -13,6 +13,7 @@
 import { cache } from "react";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { unzipSync } from "fflate";
 import {
   type SectionNode,
   type Skill,
@@ -223,87 +224,85 @@ async function readFromLocal(): Promise<RawSkill[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Source: GitHub (fetch-at-build)
+// Source: GitHub (single-archive fetch — scales flat, regardless of skill count)
 // ---------------------------------------------------------------------------
 
 function ghHeaders(): Record<string, string> {
   return {
     Authorization: `Bearer ${TOKEN}`,
-    Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "superside-skills-directory",
   };
 }
 
-async function fetchBlobRaw(owner: string, repo: string, sha: string): Promise<Buffer> {
+/**
+ * Download the whole registry as ONE zip archive and unzip it in memory.
+ *
+ * This is a single request no matter how many skills exist — the old approach
+ * made ~1 API call per file (tree + a blob per SKILL.md + per meta.json), which
+ * scaled linearly and quickly exhausted GitHub's 5,000/hour REST limit. The
+ * zipball endpoint is a separate, effectively-unlimited path, so this both
+ * fixes the rate-limit failures and scales flat with the catalog + traffic.
+ *
+ * Returns path → bytes, with GitHub's top-level "<owner>-<repo>-<sha>/" wrapper
+ * folder stripped, so keys look like "skills/<section>/<sub>/<slug>/SKILL.md".
+ * `cache()` dedupes within a request; `next.revalidate` caches the download for
+ * 5 minutes across requests so bursts of traffic reuse one archive.
+ */
+const fetchRepoArchive = cache(async (): Promise<Map<string, Uint8Array>> => {
+  const [owner, repo] = REPO.split("/");
   const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
-    { headers: ghHeaders() },
+    `https://api.github.com/repos/${owner}/${repo}/zipball/${REF}`,
+    { headers: ghHeaders(), next: { revalidate: 300 } },
   );
   if (!res.ok) {
-    throw new Error(`GitHub blob fetch failed (${res.status}) for ${sha}`);
-  }
-  const data = (await res.json()) as { content: string; encoding: BufferEncoding };
-  return Buffer.from(data.content, data.encoding || "base64");
-}
-
-async function fetchBlob(owner: string, repo: string, sha: string): Promise<string> {
-  return (await fetchBlobRaw(owner, repo, sha)).toString("utf8");
-}
-
-async function readFromGitHub(): Promise<RawSkill[]> {
-  const [owner, repo] = REPO.split("/");
-  const treeRes = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees/${REF}?recursive=1`,
-    { headers: ghHeaders() },
-  );
-  if (!treeRes.ok) {
     throw new Error(
-      `GitHub tree fetch failed (${treeRes.status}) for ${REPO}@${REF}. ` +
+      `GitHub archive fetch failed (${res.status}) for ${REPO}@${REF}. ` +
         `Check SKILLS_REPO_TOKEN has read access to the private repo.`,
     );
   }
-  const tree = (await treeRes.json()) as {
-    truncated: boolean;
-    tree: { path: string; type: string; sha: string }[];
-  };
-  if (tree.truncated) {
-    throw new Error("Skills repo tree is truncated — too many files for one request.");
-  }
+  const zip = unzipSync(new Uint8Array(await res.arrayBuffer()));
 
-  const shaByPath = new Map<string, string>();
-  for (const item of tree.tree) {
-    if (item.type === "blob") shaByPath.set(item.path, item.sha);
+  const files = new Map<string, Uint8Array>();
+  for (const [rawPath, bytes] of Object.entries(zip)) {
+    if (rawPath.endsWith("/")) continue; // directory entry
+    const slash = rawPath.indexOf("/");
+    if (slash === -1) continue; // the wrapper dir itself
+    files.set(rawPath.slice(slash + 1), bytes); // strip "<owner>-<repo>-<sha>/"
   }
+  return files;
+});
+
+async function readFromGitHub(): Promise<RawSkill[]> {
+  const files = await fetchRepoArchive();
+  const decoder = new TextDecoder();
 
   // Match exactly skills/<section>/<subcategory>/<slug>/SKILL.md (ignores submissions/, templates/, etc.)
-  const skillMdPaths = [...shaByPath.keys()].filter((p) =>
+  const skillMdPaths = [...files.keys()].filter((p) =>
     /^skills\/[^/]+\/[^/]+\/[^/]+\/SKILL\.md$/.test(p),
   );
 
-  const allPaths = [...shaByPath.keys()];
+  return skillMdPaths.map((mdPath) => {
+    const [, section, sub, slug] = mdPath.split("/");
+    const folder = `skills/${section}/${sub}/${slug}/`;
+    const md = decoder.decode(files.get(mdPath)!);
 
-  return Promise.all(
-    skillMdPaths.map(async (mdPath) => {
-      const [, section, sub, slug] = mdPath.split("/");
-      const md = await fetchBlob(owner, repo, shaByPath.get(mdPath)!);
-      const metaSha = shaByPath.get(`skills/${section}/${sub}/${slug}/meta.json`);
-      let meta: Record<string, unknown> = {};
-      if (metaSha) {
-        try {
-          meta = JSON.parse(await fetchBlob(owner, repo, metaSha));
-        } catch {
-          /* invalid meta.json — treat as empty */
-        }
+    let meta: Record<string, unknown> = {};
+    const metaBytes = files.get(`${folder}meta.json`);
+    if (metaBytes) {
+      try {
+        meta = JSON.parse(decoder.decode(metaBytes));
+      } catch {
+        /* invalid meta.json — treat as empty */
       }
-      // Files in this skill's folder, relative to it — derived from the tree we already have.
-      const folder = `skills/${section}/${sub}/${slug}/`;
-      const files = allPaths
-        .filter((p) => p.startsWith(folder))
-        .map((p) => p.slice(folder.length));
-      return { section, sub, slug, md, meta, files };
-    }),
-  );
+    }
+
+    const skillFiles = [...files.keys()]
+      .filter((p) => p.startsWith(folder))
+      .map((p) => p.slice(folder.length));
+
+    return { section, sub, slug, md, meta, files: skillFiles };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -341,23 +340,14 @@ export async function getSkillArchiveFiles(
   if (![section, sub, slug].every((s) => SAFE_SEGMENT.test(s))) return [];
 
   if (TOKEN) {
-    const [owner, repo] = REPO.split("/");
-    const treeRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${REF}?recursive=1`,
-      { headers: ghHeaders() },
-    );
-    if (!treeRes.ok) return [];
-    const tree = (await treeRes.json()) as {
-      tree: { path: string; type: string; sha: string }[];
-    };
+    // Reuse the single cached archive — no extra GitHub call per download.
+    const files = await fetchRepoArchive();
     const folder = `skills/${section}/${sub}/${slug}/`;
-    const blobs = tree.tree.filter((i) => i.type === "blob" && i.path.startsWith(folder));
-    return Promise.all(
-      blobs.map(async (b) => ({
-        path: b.path.slice(folder.length),
-        content: new Uint8Array(await fetchBlobRaw(owner, repo, b.sha)),
-      })),
-    );
+    const out: ArchiveFile[] = [];
+    for (const [p, content] of files) {
+      if (p.startsWith(folder)) out.push({ path: p.slice(folder.length), content });
+    }
+    return out;
   }
 
   const dir = path.join(LOCAL_PATH, "skills", section, sub, slug);

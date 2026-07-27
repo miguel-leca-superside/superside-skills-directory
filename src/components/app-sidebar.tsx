@@ -17,6 +17,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogoMark } from "@/components/icons";
 import { Tag } from "@/components/tag";
 import { useFilters } from "@/components/app-shell";
+import { useSavedSkills } from "@/lib/saved-skills";
+import { avatarColor, CURRENT_USER, type SectionNode } from "@/lib/data";
 import {
   Dialog,
   DialogContent,
@@ -25,14 +27,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { UploadSkill } from "@/components/upload-skill";
-import type { SectionNode } from "@/lib/data";
 
-const NAV: { label: string; icon: LucideIcon; modal?: boolean; href?: string }[] = [
-  { label: "Search", icon: Search },
+const NAV: {
+  label: string;
+  icon: LucideIcon;
+  modal?: boolean;
+  href?: string;
+  command?: "search" | "saved" | "created";
+}[] = [
+  { label: "Search", icon: Search, command: "search" },
   { label: "Upload a Skill", icon: FileUp, modal: true },
   { label: "Request a Skill", icon: Plus, href: "/requests" },
-  { label: "Saved", icon: Bookmark },
-  { label: "Created by me", icon: Blocks },
+  { label: "Saved", icon: Bookmark, command: "saved" },
+  { label: "Created by me", icon: Blocks, command: "created" },
 ];
 
 const ITEM =
@@ -101,7 +108,8 @@ function CollapsibleSection({
 }
 
 export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: string[] }) {
-  const { selected, setSelected, activeTags, toggleTag } = useFilters();
+  const { selected, setSelected, activeTags, toggleTag, openSearch, view, setView } = useFilters();
+  const { saved } = useSavedSkills();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -112,14 +120,21 @@ export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: 
   };
   const selectCategory = (value: string) => {
     setSelected(value);
+    setView("all");
     goHomeIfNeeded();
   };
   const goHome = () => {
     setSelected("");
+    setView("all");
     goHomeIfNeeded();
   };
   const onToggleTag = (tag: string) => {
     toggleTag(tag);
+    goHomeIfNeeded();
+  };
+  const selectView = (v: "saved" | "created") => {
+    setView(v);
+    setSelected("");
     goHomeIfNeeded();
   };
 
@@ -138,8 +153,43 @@ export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: 
 
         {/* Primary nav */}
         <nav className="flex flex-col">
-          {NAV.map(({ label, icon: Icon, modal, href }) =>
-            modal ? (
+          {NAV.map(({ label, icon: Icon, modal, href, command }) =>
+            command === "search" ? (
+              <button
+                key={label}
+                type="button"
+                onClick={openSearch}
+                className={`${ITEM} justify-between`}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                  {label}
+                </span>
+                <kbd className="rounded border border-sidebar-border bg-sidebar-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  ⌘K
+                </kbd>
+              </button>
+            ) : command === "saved" || command === "created" ? (
+              <button
+                key={label}
+                type="button"
+                onClick={() => selectView(command)}
+                aria-current={view === command ? "true" : undefined}
+                className={`${ITEM} justify-between ${
+                  view === command ? "bg-sidebar-accent font-medium text-foreground" : ""
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                  {label}
+                </span>
+                {command === "saved" && saved.length > 0 && (
+                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                    {saved.length}
+                  </span>
+                )}
+              </button>
+            ) : modal ? (
               <Dialog key={label}>
                 <DialogTrigger className={ITEM}>
                   <Icon className="size-4 shrink-0" strokeWidth={1.5} />
@@ -177,13 +227,12 @@ export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: 
         <div className="flex flex-col gap-3">
           <span className={SECTION}>Categories</span>
           <div className="flex flex-col">
-            {sections.map((section, i) => (
+            {sections.map((section) => (
               <CollapsibleSection
                 key={section.slug}
                 section={section}
                 selected={selected}
                 onSelect={selectCategory}
-                defaultOpen={i === 0}
               />
             ))}
           </div>
@@ -207,11 +256,9 @@ export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: 
       {/* User */}
       <div className="flex items-center gap-2 px-2 pt-6">
         <Avatar className="size-5">
-          <AvatarFallback className="bg-secondary text-[10px] font-normal text-foreground">
-            ML
-          </AvatarFallback>
+          <AvatarFallback style={{ backgroundColor: avatarColor(CURRENT_USER) }} />
         </Avatar>
-        <span className="text-sm">Miguel Leça</span>
+        <span className="text-sm">{CURRENT_USER}</span>
       </div>
     </aside>
   );

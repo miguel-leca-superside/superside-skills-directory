@@ -40,6 +40,12 @@ export type SectionNode = {
   subcategories: SubcategoryNode[];
 };
 
+/**
+ * The signed-in user's display name. Hardcoded until real SSO — used to match a
+ * skill's `author` for the "Created by me" view and to render the sidebar footer.
+ */
+export const CURRENT_USER = "Miguel Leça";
+
 /** Primary nav — static links (behavior wired up separately). */
 export const NAV_ITEMS = [
   { label: "Search", icon: "search" },
@@ -117,6 +123,25 @@ export function slugToLabel(slug: string): string {
 /** Display title for a skill, derived from its slug/`name` (e.g. "asana-project-setup"). */
 export function skillTitleFromSlug(slug: string): string {
   return titleCase(slug);
+}
+
+/** Placeholder avatar fills — bright, evenly-spaced hues; white initials read on all. */
+const AVATAR_COLORS = [
+  "#f26d6d", // coral
+  "#ee8a34", // orange
+  "#27b45e", // green
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
+  "#e056a6", // pink
+];
+
+/** Pick a stable placeholder avatar color for a name/seed (same seed → same color). */
+export function avatarColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
 /**

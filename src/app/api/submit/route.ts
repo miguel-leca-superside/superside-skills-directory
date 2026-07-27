@@ -168,7 +168,7 @@ export async function POST(request: Request) {
       "",
       "| Field | Value |",
       "| --- | --- |",
-      `| Submitted by | ${metaJson.authorName} (${metaJson.author}) |`,
+      `| Submitted by | ${metaJson.authorName} |`,
       `| Team | ${metaJson.team} |`,
       `| Visibility | ${metaJson.visibility} |`,
       `| Source | ${metaJson.source} |`,

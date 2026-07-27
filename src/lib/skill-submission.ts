@@ -152,10 +152,14 @@ export function validateSkill(skill: NormalizedSkill): ValidationResult {
   return { ok: errors.length === 0, errors, warnings };
 }
 
-/** Build the meta.json sidecar for a pending submission. `submittedAt` is an ISO date (server-set). */
+/**
+ * Build the meta.json sidecar for a pending submission. `submittedAt` is an ISO date (server-set).
+ * NOTE: the submitter's email is deliberately NOT written here — the registry repo is public,
+ * so only the display name (`authorName`) is persisted. The email is still collected for
+ * server-side validation but never committed.
+ */
 export function buildSubmissionMeta(meta: SubmissionMeta, submittedAt: string) {
   return {
-    author: meta.author,
     authorName: meta.authorName,
     team: meta.team,
     visibility: meta.visibility,

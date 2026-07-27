@@ -1,8 +1,12 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import type { SectionNode } from "@/lib/data";
+import { SearchModal } from "@/components/search-modal";
+import type { SectionNode, Skill } from "@/lib/data";
+
+/** Top-level directory view: browse all/by-category, saved bookmarks, or my own skills. */
+export type DirectoryView = "all" | "saved" | "created";
 
 type Filters = {
   /** "" = home (all skills). Otherwise a "<section>/<subcategory>" slug path. */
@@ -11,6 +15,11 @@ type Filters = {
   activeTags: string[];
   toggleTag: (tag: string) => void;
   clearTags: () => void;
+  /** Open the command-palette search modal (from the sidebar or ⌘K). */
+  openSearch: () => void;
+  /** Which special view is active (or "all" for normal browsing). */
+  view: DirectoryView;
+  setView: (view: DirectoryView) => void;
 };
 
 const FilterContext = createContext<Filters | null>(null);
@@ -31,24 +40,50 @@ export function useFilters(): Filters {
 export function AppShell({
   sections,
   tags,
+  skills,
   children,
 }: {
   sections: SectionNode[];
   tags: string[];
+  skills: Skill[];
   children: ReactNode;
 }) {
   const [selected, setSelected] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<DirectoryView>("all");
 
   const toggleTag = (tag: string) =>
     setActiveTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   const clearTags = () => setActiveTags([]);
+  const openSearch = () => setSearchOpen(true);
+
+  // ⌘K / Ctrl+K toggles search from anywhere in the app.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <FilterContext.Provider
-      value={{ selected, setSelected, activeTags, toggleTag, clearTags }}
+      value={{
+        selected,
+        setSelected,
+        activeTags,
+        toggleTag,
+        clearTags,
+        openSearch,
+        view,
+        setView,
+      }}
     >
       <div className="flex h-dvh gap-4 bg-background p-3">
         <a
@@ -64,6 +99,7 @@ export function AppShell({
           </div>
         </main>
       </div>
+      <SearchModal skills={skills} open={searchOpen} onOpenChange={setSearchOpen} />
     </FilterContext.Provider>
   );
 }

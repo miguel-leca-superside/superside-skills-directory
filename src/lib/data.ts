@@ -11,8 +11,14 @@ export type Skill = {
   /** Human display name derived from the slug, e.g. "Asana Project Setup". */
   name: string;
   description: string;
+  /** SKILL.md body (frontmatter stripped) — the markdown shown on the detail page. */
+  body: string;
+  /** Other files shipped with the skill (relative paths; excludes SKILL.md and meta.json). */
+  files: string[];
   /** Display name of the author (from meta.json `authorName`). */
   author: string;
+  /** Owning team (from meta.json `team`). */
+  team: string;
   tags: string[];
   /** Section slug, from the folder path (e.g. "creative-skills"). */
   section: string;
@@ -21,6 +27,10 @@ export type Skill = {
   status: string;
   visibility: string;
   source: string;
+  /** ISO date the skill was submitted (from meta.json), if known. */
+  submittedAt?: string;
+  /** ISO date the skill was approved (from meta.json), if known. */
+  approvedAt?: string;
 };
 
 export type SubcategoryNode = { slug: string; label: string; count: number };
@@ -107,6 +117,15 @@ export function slugToLabel(slug: string): string {
 /** Display title for a skill, derived from its slug/`name` (e.g. "asana-project-setup"). */
 export function skillTitleFromSlug(slug: string): string {
   return titleCase(slug);
+}
+
+/**
+ * Strip a leading YAML frontmatter block (`---\n…\n---`) from a SKILL.md string,
+ * returning just the markdown body. Mirrors the frontmatter regex used by the
+ * loader's `parseFrontmatter`. If there's no frontmatter, returns the input trimmed.
+ */
+export function stripFrontmatter(md: string): string {
+  return md.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n?/, "").trim();
 }
 
 /** Shown as the page sub-headline when a category has no dedicated copy. */

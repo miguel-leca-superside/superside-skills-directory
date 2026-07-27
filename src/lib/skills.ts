@@ -10,6 +10,7 @@
 // Registry layout it reads:  skills/<section>/<subcategory>/<skill-name>/SKILL.md (+ meta.json)
 // section/subcategory come from the folder PATH; SKILL.md stays pristine; meta.json is the sidecar.
 
+import { cache } from "react";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -20,6 +21,7 @@ import {
   SUBCATEGORY_ORDER,
   skillTitleFromSlug,
   slugToLabel,
+  stripFrontmatter,
 } from "@/lib/data";
 
 const REPO = process.env.SKILLS_REPO || "miguel-leca-superside/superside-skills";
@@ -36,6 +38,8 @@ type RawSkill = {
   slug: string;
   md: string;
   meta: Record<string, unknown>;
+  /** All files in the skill folder, relative to it (includes SKILL.md/meta.json). */
+  files: string[];
 };
 
 export type Catalog = {
@@ -123,16 +127,23 @@ function assemble(raws: RawSkill[], source: Catalog["source"]): Catalog {
           slug: name,
           name: skillTitleFromSlug(name),
           description: fm.description || "",
+          body: stripFrontmatter(raw.md),
+          files: raw.files
+            .filter((f) => f !== "SKILL.md" && f !== "meta.json")
+            .sort((a, b) => a.localeCompare(b)),
           author:
             (raw.meta.authorName as string) ||
             (raw.meta.author as string) ||
             "Unknown",
+          team: (raw.meta.team as string) || "",
           tags,
           section,
           subcategory: sub,
           status: (raw.meta.status as string) || "approved",
           visibility: (raw.meta.visibility as string) || "internal",
           source: (raw.meta.source as string) || "",
+          submittedAt: (raw.meta.submittedAt as string) || undefined,
+          approvedAt: (raw.meta.approvedAt as string) || undefined,
         });
       }
 
@@ -167,6 +178,22 @@ async function readSubdirs(dir: string): Promise<string[]> {
   }
 }
 
+/** List every file under `dir`, as paths relative to `dir` (skips OS junk). */
+async function listFilesRecursive(dir: string, prefix = ""): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const out: string[] = [];
+  for (const entry of entries) {
+    if (entry.name === ".DS_Store") continue;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...(await listFilesRecursive(path.join(dir, entry.name), rel)));
+    } else {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
 async function readFromLocal(): Promise<RawSkill[]> {
   const skillsRoot = path.join(LOCAL_PATH, "skills");
   const raws: RawSkill[] = [];
@@ -187,7 +214,8 @@ async function readFromLocal(): Promise<RawSkill[]> {
         } catch {
           /* no/invalid meta.json — treat as empty */
         }
-        raws.push({ section, sub, slug, md, meta });
+        const files = await listFilesRecursive(dir);
+        raws.push({ section, sub, slug, md, meta, files });
       }
     }
   }
@@ -207,7 +235,7 @@ function ghHeaders(): Record<string, string> {
   };
 }
 
-async function fetchBlob(owner: string, repo: string, sha: string): Promise<string> {
+async function fetchBlobRaw(owner: string, repo: string, sha: string): Promise<Buffer> {
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
     { headers: ghHeaders() },
@@ -216,7 +244,11 @@ async function fetchBlob(owner: string, repo: string, sha: string): Promise<stri
     throw new Error(`GitHub blob fetch failed (${res.status}) for ${sha}`);
   }
   const data = (await res.json()) as { content: string; encoding: BufferEncoding };
-  return Buffer.from(data.content, data.encoding || "base64").toString("utf8");
+  return Buffer.from(data.content, data.encoding || "base64");
+}
+
+async function fetchBlob(owner: string, repo: string, sha: string): Promise<string> {
+  return (await fetchBlobRaw(owner, repo, sha)).toString("utf8");
 }
 
 async function readFromGitHub(): Promise<RawSkill[]> {
@@ -249,6 +281,8 @@ async function readFromGitHub(): Promise<RawSkill[]> {
     /^skills\/[^/]+\/[^/]+\/[^/]+\/SKILL\.md$/.test(p),
   );
 
+  const allPaths = [...shaByPath.keys()];
+
   return Promise.all(
     skillMdPaths.map(async (mdPath) => {
       const [, section, sub, slug] = mdPath.split("/");
@@ -262,7 +296,12 @@ async function readFromGitHub(): Promise<RawSkill[]> {
           /* invalid meta.json — treat as empty */
         }
       }
-      return { section, sub, slug, md, meta };
+      // Files in this skill's folder, relative to it — derived from the tree we already have.
+      const folder = `skills/${section}/${sub}/${slug}/`;
+      const files = allPaths
+        .filter((p) => p.startsWith(folder))
+        .map((p) => p.slice(folder.length));
+      return { section, sub, slug, md, meta, files };
     }),
   );
 }
@@ -276,9 +315,57 @@ async function readFromGitHub(): Promise<RawSkill[]> {
  * token is configured (production), otherwise reads the local sibling
  * checkout (dev). Returns the same shape either way.
  */
-export async function getCatalog(): Promise<Catalog> {
+export const getCatalog = cache(async (): Promise<Catalog> => {
   if (TOKEN) {
     return assemble(await readFromGitHub(), "github");
   }
   return assemble(await readFromLocal(), "local");
+});
+
+/** A single file's bytes, path relative to the skill folder. */
+export type ArchiveFile = { path: string; content: Uint8Array };
+
+// URL segments are untrusted — allow only plain slug characters (no "/" or "..").
+const SAFE_SEGMENT = /^[a-zA-Z0-9._-]+$/;
+
+/**
+ * Read every file belonging to one skill folder (SKILL.md + siblings), for zipping
+ * into a download. Returns paths relative to the skill folder with raw bytes.
+ * Returns an empty array when the folder doesn't exist or a segment is unsafe.
+ */
+export async function getSkillArchiveFiles(
+  section: string,
+  sub: string,
+  slug: string,
+): Promise<ArchiveFile[]> {
+  if (![section, sub, slug].every((s) => SAFE_SEGMENT.test(s))) return [];
+
+  if (TOKEN) {
+    const [owner, repo] = REPO.split("/");
+    const treeRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${REF}?recursive=1`,
+      { headers: ghHeaders() },
+    );
+    if (!treeRes.ok) return [];
+    const tree = (await treeRes.json()) as {
+      tree: { path: string; type: string; sha: string }[];
+    };
+    const folder = `skills/${section}/${sub}/${slug}/`;
+    const blobs = tree.tree.filter((i) => i.type === "blob" && i.path.startsWith(folder));
+    return Promise.all(
+      blobs.map(async (b) => ({
+        path: b.path.slice(folder.length),
+        content: new Uint8Array(await fetchBlobRaw(owner, repo, b.sha)),
+      })),
+    );
+  }
+
+  const dir = path.join(LOCAL_PATH, "skills", section, sub, slug);
+  const rels = await listFilesRecursive(dir);
+  return Promise.all(
+    rels.map(async (rel) => ({
+      path: rel,
+      content: new Uint8Array(await fs.readFile(path.join(dir, rel))),
+    })),
+  );
 }

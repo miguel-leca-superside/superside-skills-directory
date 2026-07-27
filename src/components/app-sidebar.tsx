@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Blocks,
   Bookmark,
@@ -14,12 +16,21 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogoMark } from "@/components/icons";
 import { Tag } from "@/components/tag";
+import { useFilters } from "@/components/app-shell";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { UploadSkill } from "@/components/upload-skill";
 import type { SectionNode } from "@/lib/data";
 
-const NAV: { label: string; icon: LucideIcon }[] = [
+const NAV: { label: string; icon: LucideIcon; modal?: boolean; href?: string }[] = [
   { label: "Search", icon: Search },
-  { label: "Upload a Skill", icon: FileUp },
-  { label: "Request a Skill", icon: Plus },
+  { label: "Upload a Skill", icon: FileUp, modal: true },
+  { label: "Request a Skill", icon: Plus, href: "/requests" },
   { label: "Saved", icon: Bookmark },
   { label: "Created by me", icon: Blocks },
 ];
@@ -89,28 +100,36 @@ function CollapsibleSection({
   );
 }
 
-export function AppSidebar({
-  sections,
-  tags,
-  selected,
-  onSelect,
-  activeTags,
-  onToggleTag,
-}: {
-  sections: SectionNode[];
-  tags: string[];
-  selected: string;
-  onSelect: (value: string) => void;
-  activeTags: string[];
-  onToggleTag: (tag: string) => void;
-}) {
+export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: string[] }) {
+  const { selected, setSelected, activeTags, toggleTag } = useFilters();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Filtering happens on the home directory, so selecting from another page
+  // updates the filter and navigates home to show it.
+  const goHomeIfNeeded = () => {
+    if (pathname !== "/") router.push("/");
+  };
+  const selectCategory = (value: string) => {
+    setSelected(value);
+    goHomeIfNeeded();
+  };
+  const goHome = () => {
+    setSelected("");
+    goHomeIfNeeded();
+  };
+  const onToggleTag = (tag: string) => {
+    toggleTag(tag);
+    goHomeIfNeeded();
+  };
+
   return (
     <aside className="no-scrollbar flex w-[236px] shrink-0 flex-col justify-between overflow-y-auto py-3">
       <div className="flex flex-col gap-8">
         {/* Brand — returns to the full directory (home) */}
         <button
           type="button"
-          onClick={() => onSelect("")}
+          onClick={goHome}
           className="flex w-fit items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-sidebar-accent"
         >
           <LogoMark className="h-[13px] w-4 text-foreground" />
@@ -119,12 +138,39 @@ export function AppSidebar({
 
         {/* Primary nav */}
         <nav className="flex flex-col">
-          {NAV.map(({ label, icon: Icon }) => (
-            <button key={label} type="button" className={ITEM}>
-              <Icon className="size-4 shrink-0" strokeWidth={1.5} />
-              {label}
-            </button>
-          ))}
+          {NAV.map(({ label, icon: Icon, modal, href }) =>
+            modal ? (
+              <Dialog key={label}>
+                <DialogTrigger className={ITEM}>
+                  <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                  {label}
+                </DialogTrigger>
+                <DialogContent>
+                  <div className="flex flex-col gap-2 pr-8">
+                    <DialogTitle>Upload a Skill</DialogTitle>
+                    <DialogDescription>
+                      Built a skill in Claude? Drop the export here to submit it. An admin reviews
+                      it before it appears in the catalog — you don&apos;t need to categorize it or
+                      touch any code.
+                    </DialogDescription>
+                  </div>
+                  <div className="mt-6">
+                    <UploadSkill />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : href ? (
+              <Link key={label} href={href} className={ITEM}>
+                <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                {label}
+              </Link>
+            ) : (
+              <button key={label} type="button" className={ITEM}>
+                <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                {label}
+              </button>
+            ),
+          )}
         </nav>
 
         {/* Categories — one collapsible per section, driven by the catalog */}
@@ -136,7 +182,7 @@ export function AppSidebar({
                 key={section.slug}
                 section={section}
                 selected={selected}
-                onSelect={onSelect}
+                onSelect={selectCategory}
                 defaultOpen={i === 0}
               />
             ))}
@@ -149,11 +195,7 @@ export function AppSidebar({
             <span className={SECTION}>Tags</span>
             <div className="flex flex-wrap gap-1 px-2">
               {tags.map((tag) => (
-                <Tag
-                  key={tag}
-                  active={activeTags.includes(tag)}
-                  onClick={() => onToggleTag(tag)}
-                >
+                <Tag key={tag} active={activeTags.includes(tag)} onClick={() => onToggleTag(tag)}>
                   {tag}
                 </Tag>
               ))}

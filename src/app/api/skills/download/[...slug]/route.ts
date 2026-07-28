@@ -3,6 +3,7 @@
 
 import { zipSync } from "fflate";
 import { getSkillArchiveFiles } from "@/lib/skills";
+import { recordInstall } from "@/lib/metrics";
 
 export async function GET(
   _req: Request,
@@ -18,6 +19,9 @@ export async function GET(
   if (files.length === 0) {
     return new Response("Not found", { status: 404 });
   }
+
+  // Grabbing the .zip is an install — count it (best-effort, before we stream).
+  await recordInstall(`${section}/${sub}/${name}`);
 
   // Nest everything under a top-level <name>/ folder so the unzip lands cleanly.
   const entries: Record<string, Uint8Array> = {};

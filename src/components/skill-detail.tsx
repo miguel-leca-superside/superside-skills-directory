@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Markdown } from "@/components/markdown";
 import { InstallBlock } from "@/components/install-block";
 import { BookmarkButton } from "@/components/bookmark-button";
+import { ViewTracker } from "@/components/view-tracker";
 import { type Skill, avatarColor, slugToLabel } from "@/lib/data";
 
 const MONTHS = [
@@ -48,6 +49,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-12 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+      <ViewTracker id={skill.id} />
       <Link
         href="/"
         className="mb-8 flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -103,7 +105,11 @@ export function SkillDetail({ skill }: { skill: Skill }) {
 
         {/* RIGHT: install + details rail */}
         <aside className="flex w-full flex-col gap-6 lg:sticky lg:top-12 lg:w-[340px] lg:shrink-0">
-          <InstallBlock slug={skill.slug} downloadHref={`/api/skills/download/${skill.id}`} />
+          <InstallBlock
+            slug={skill.slug}
+            skillId={skill.id}
+            downloadHref={`/api/skills/download/${skill.id}`}
+          />
 
           <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
             <h2 className="text-base font-medium text-foreground">Details</h2>

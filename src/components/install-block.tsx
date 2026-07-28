@@ -3,13 +3,22 @@
 import { useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
 
-function CommandRow({ label, command }: { label: string; command: string }) {
+function CommandRow({
+  label,
+  command,
+  onCopy,
+}: {
+  label: string;
+  command: string;
+  onCopy?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(command);
       setCopied(true);
+      onCopy?.();
       setTimeout(() => setCopied(false), 1500);
     } catch {
       /* clipboard unavailable (e.g. insecure context) — no-op */
@@ -46,7 +55,26 @@ function CommandRow({ label, command }: { label: string; command: string }) {
   );
 }
 
-export function InstallBlock({ slug, downloadHref }: { slug: string; downloadHref: string }) {
+export function InstallBlock({
+  slug,
+  skillId,
+  downloadHref,
+}: {
+  slug: string;
+  skillId: string;
+  downloadHref: string;
+}) {
+  // Copying the CLI command counts as an install (the .zip path is counted
+  // server-side in the download route). Best-effort — never blocks the copy.
+  const recordInstall = () => {
+    fetch("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: skillId }),
+      keepalive: true,
+    }).catch(() => {});
+  };
+
   return (
     <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-4">
@@ -60,7 +88,11 @@ export function InstallBlock({ slug, downloadHref }: { slug: string; downloadHre
         </a>
       </div>
 
-      <CommandRow label="Install into your agent" command={`npx superside-skills add -s ${slug}`} />
+      <CommandRow
+        label="Install into your agent"
+        command={`npx superside-skills add -s ${slug}`}
+        onCopy={recordInstall}
+      />
     </section>
   );
 }

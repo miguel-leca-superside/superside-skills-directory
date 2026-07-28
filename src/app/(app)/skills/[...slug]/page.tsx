@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SkillDetail } from "@/components/skill-detail";
 import { getCatalog } from "@/lib/skills";
+import { getSkillMetrics } from "@/lib/metrics";
 
 // Match the home page's ISR cadence so a newly-approved skill's page appears
 // on its own within ~5 minutes, no redeploy needed.
@@ -39,5 +40,6 @@ export default async function SkillPage({ params }: { params: Promise<Params> })
   const { slug } = await params;
   const skill = await findSkill(slug);
   if (!skill) notFound();
-  return <SkillDetail skill={skill} />;
+  const metrics = await getSkillMetrics(skill.id);
+  return <SkillDetail skill={skill} metrics={metrics} />;
 }

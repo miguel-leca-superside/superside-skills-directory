@@ -6,6 +6,7 @@ import { InstallBlock } from "@/components/install-block";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { ViewTracker } from "@/components/view-tracker";
 import { type Skill, avatarColor, slugToLabel } from "@/lib/data";
+import type { SkillMetrics } from "@/lib/metrics";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -42,7 +43,7 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-export function SkillDetail({ skill }: { skill: Skill }) {
+export function SkillDetail({ skill, metrics }: { skill: Skill; metrics: SkillMetrics }) {
   const category = `${slugToLabel(skill.section)} / ${slugToLabel(skill.subcategory)}`;
   const submitted = formatDate(skill.submittedAt);
   const approved = formatDate(skill.approvedAt);
@@ -109,6 +110,8 @@ export function SkillDetail({ skill }: { skill: Skill }) {
             slug={skill.slug}
             skillId={skill.id}
             downloadHref={`/api/skills/download/${skill.id}`}
+            installs={metrics.configured ? metrics.installs : null}
+            views={metrics.configured ? metrics.views : null}
           />
 
           <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">

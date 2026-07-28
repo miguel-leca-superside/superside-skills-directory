@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy, Download, Eye, Package } from "lucide-react";
+
+/** "1 install" / "1,234 installs" — deterministic locale so SSR + client match. */
+function countLabel(n: number, noun: string): string {
+  return `${n.toLocaleString("en-US")} ${noun}${n === 1 ? "" : "s"}`;
+}
 
 function CommandRow({
   label,
@@ -59,10 +64,15 @@ export function InstallBlock({
   slug,
   skillId,
   downloadHref,
+  installs,
+  views,
 }: {
   slug: string;
   skillId: string;
   downloadHref: string;
+  /** null when metric tracking isn't configured — the stats line is hidden. */
+  installs?: number | null;
+  views?: number | null;
 }) {
   // Copying the CLI command counts as an install (the .zip path is counted
   // server-side in the download route). Best-effort — never blocks the copy.
@@ -93,6 +103,21 @@ export function InstallBlock({
         command={`npx superside-skills add -s ${slug}`}
         onCopy={recordInstall}
       />
+
+      {installs != null && (
+        <div className="flex items-center gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <Package className="size-3.5" strokeWidth={1.5} />
+            {countLabel(installs, "install")}
+          </span>
+          {views != null && (
+            <span className="inline-flex items-center gap-1.5">
+              <Eye className="size-3.5" strokeWidth={1.5} />
+              {countLabel(views, "view")}
+            </span>
+          )}
+        </div>
+      )}
     </section>
   );
 }

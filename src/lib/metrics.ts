@@ -59,6 +59,36 @@ export type Metrics = {
   installs: Record<string, number>;
 };
 
+export type SkillMetrics = { configured: boolean; views: number; installs: number };
+
+/** Read one skill's view + install counts (a light two-field pipeline). */
+export async function getSkillMetrics(id: string): Promise<SkillMetrics> {
+  if (!metricsConfigured()) return { configured: false, views: 0, installs: 0 };
+  try {
+    const res = await fetch(`${REST_URL}/pipeline`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${REST_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([
+        ["HGET", VIEWS_KEY, id],
+        ["HGET", INSTALLS_KEY, id],
+      ]),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) throw new Error(`pipeline ${res.status}`);
+    const [views, installs] = (await res.json()) as Array<{ result?: unknown }>;
+    return {
+      configured: true,
+      views: Number(views?.result ?? 0) || 0,
+      installs: Number(installs?.result ?? 0) || 0,
+    };
+  } catch {
+    return { configured: true, views: 0, installs: 0 };
+  }
+}
+
 /** Turn Redis HGETALL's flat [field, value, field, value, …] into a map. */
 function toMap(flat: unknown): Record<string, number> {
   const out: Record<string, number> = {};

@@ -93,7 +93,7 @@ export function AppShell({
           Skip to content
         </a>
         <AppSidebar sections={sections} tags={tags} totalCount={skills.length} />
-        <main id="main" className="flex-1 overflow-y-auto">
+        <main id="main" className="no-scrollbar flex-1 overflow-y-auto">
           <div className="min-h-full rounded-2xl border border-border bg-muted">
             {children}
           </div>

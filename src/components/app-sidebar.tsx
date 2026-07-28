@@ -9,6 +9,7 @@ import {
   FileUp,
   FolderClosed,
   FolderOpen,
+  LayoutGrid,
   Plus,
   Search,
   type LucideIcon,
@@ -18,7 +19,7 @@ import { LogoMark } from "@/components/icons";
 import { Tag } from "@/components/tag";
 import { useFilters } from "@/components/app-shell";
 import { useSavedSkills } from "@/lib/saved-skills";
-import { avatarColor, CURRENT_USER, type SectionNode } from "@/lib/data";
+import { avatarColor, CURRENT_USER, type SectionNode, type SubcategoryNode } from "@/lib/data";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,37 @@ const ITEM =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent";
 const SECTION = "px-2 text-sm text-muted-foreground";
 
+function SubcategoryButton({
+  section,
+  sub,
+  active,
+  onSelect,
+}: {
+  section: SectionNode;
+  sub: SubcategoryNode;
+  active: boolean;
+  onSelect: (value: string) => void;
+}) {
+  const value = `${section.slug}/${sub.slug}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(value)}
+      aria-current={active ? "true" : undefined}
+      className={`${ITEM} justify-between pl-8 ${
+        active
+          ? "bg-sidebar-accent font-medium text-foreground"
+          : "text-muted-foreground"
+      }`}
+    >
+      <span className="truncate">{sub.label}</span>
+      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+        {sub.count}
+      </span>
+    </button>
+  );
+}
+
 function CollapsibleSection({
   section,
   selected,
@@ -60,17 +92,31 @@ function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
   const Icon = open ? FolderOpen : FolderClosed;
 
+  // The selected subcategory living inside this section (if any). When the
+  // folder is collapsed we keep it pinned below the header so it stays visible
+  // and it's always clear what's currently selected.
+  const selectedSub = section.subcategories.find(
+    (sub) => `${section.slug}/${sub.slug}` === selected,
+  );
+
   return (
     <div className="flex flex-col">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className={ITEM}
+        className={`${ITEM} ${selectedSub ? "font-medium text-foreground" : ""}`}
       >
         <Icon className="size-4 shrink-0" strokeWidth={1.5} />
         <span className="truncate">{section.label}</span>
       </button>
+
+      {/* Pinned selection: shown only while collapsed, so the active
+          subcategory doesn't disappear when the folder is closed. */}
+      {!open && selectedSub && (
+        <SubcategoryButton section={section} sub={selectedSub} active onSelect={onSelect} />
+      )}
+
       <div
         className={`grid transition-[grid-template-rows] duration-200 ease-[var(--ease-out)] ${
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
@@ -78,28 +124,15 @@ function CollapsibleSection({
       >
         <div className="overflow-hidden" inert={!open}>
           <div className="flex flex-col">
-            {section.subcategories.map((sub) => {
-              const value = `${section.slug}/${sub.slug}`;
-              const active = selected === value;
-              return (
-                <button
-                  key={sub.slug}
-                  type="button"
-                  onClick={() => onSelect(value)}
-                  aria-current={active ? "true" : undefined}
-                  className={`${ITEM} justify-between pl-8 ${
-                    active
-                      ? "bg-sidebar-accent font-medium text-foreground"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  <span className="truncate">{sub.label}</span>
-                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                    {sub.count}
-                  </span>
-                </button>
-              );
-            })}
+            {section.subcategories.map((sub) => (
+              <SubcategoryButton
+                key={sub.slug}
+                section={section}
+                sub={sub}
+                active={selected === `${section.slug}/${sub.slug}`}
+                onSelect={onSelect}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -107,7 +140,15 @@ function CollapsibleSection({
   );
 }
 
-export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: string[] }) {
+export function AppSidebar({
+  sections,
+  tags,
+  totalCount,
+}: {
+  sections: SectionNode[];
+  tags: string[];
+  totalCount: number;
+}) {
   const { selected, setSelected, activeTags, toggleTag, openSearch, view, setView } = useFilters();
   const { saved } = useSavedSkills();
   const router = useRouter();
@@ -227,6 +268,25 @@ export function AppSidebar({ sections, tags }: { sections: SectionNode[]; tags: 
         <div className="flex flex-col gap-3">
           <span className={SECTION}>Categories</span>
           <div className="flex flex-col">
+            {/* Always-visible way back to the full directory (no category filter). */}
+            <button
+              type="button"
+              onClick={goHome}
+              aria-current={view === "all" && selected === "" ? "true" : undefined}
+              className={`${ITEM} justify-between ${
+                view === "all" && selected === ""
+                  ? "bg-sidebar-accent font-medium text-foreground"
+                  : ""
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <LayoutGrid className="size-4 shrink-0" strokeWidth={1.5} />
+                All skills
+              </span>
+              <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                {totalCount}
+              </span>
+            </button>
             {sections.map((section) => (
               <CollapsibleSection
                 key={section.slug}
